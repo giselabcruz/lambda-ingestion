@@ -4,6 +4,8 @@ Este proyecto implementa el componente de ingestión de datos dentro de la arqui
 
 ## Arquitectura
 
+![Arquitectura del Sistema](diagram/architecture.png)
+
 Tal como se define en el diseño del sistema, el flujo de ingestión es totalmente asíncrono y dirigido por eventos:
 
 1.  **S3 (Origen)**: El usuario sube un archivo de datos (ej. `tickets.csv`) a un bucket de Amazon S3.
