@@ -3,15 +3,19 @@ import boto3
 import os
 import csv
 import logging
+from neo4j import GraphDatabase
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 s3_client = boto3.client('s3')
-dynamodb = boto3.resource('dynamodb')
 
-TABLE_NAME = os.environ.get('DYNAMODB_TABLE', 'Tickets')
-table = dynamodb.Table(TABLE_NAME)
+# Neo4j connection configuration
+NEO4J_URI = os.environ.get('NEO4J_URI')
+NEO4J_USER = os.environ.get('NEO4J_USER', 'neo4j')
+NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
+
+driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 
 def lambda_handler(event, context):
     logger.info(f"Received event: {json.dumps(event)}")
@@ -33,7 +37,7 @@ def lambda_handler(event, context):
                 download_path = f"/tmp/{key.split('/')[-1]}"
                 s3_client.download_file(bucket_name, key, download_path)
                 
-                process_csv_to_dynamodb(download_path)
+                process_csv_to_neo4j(download_path)
                         
         return {
             'statusCode': 200,
@@ -44,26 +48,47 @@ def lambda_handler(event, context):
         logger.error(f"Error processing event: {e}")
         raise e
 
-def process_csv_to_dynamodb(file_path):
+def process_csv_to_neo4j(file_path):
     try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            csv_reader = csv.DictReader(f)
-            
-            with table.batch_writer() as batch:
+        with driver.session() as session:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                csv_reader = csv.DictReader(f)
+                
                 for row in csv_reader:
-                    item = {
-                        'ticket_id': row['ticket_id'],
-                        'product': row['product'],
-                        'basket_id': row['basket_id'],
-                        'timestamp': row['timestamp'],
-                        'category': row['category'],
-                        'quantity': int(row['quantity']),
-                        'store': row['store']
-                    }
-                    batch.put_item(Item=item)
+                    session.execute_write(create_ticket_node, row)
                     
-        logger.info(f"Successfully processed {file_path} into DynamoDB")
+        logger.info(f"Successfully processed {file_path} into Neo4j")
 
     except Exception as e:
-        logger.error(f"Error writing to DynamoDB for file {file_path}: {e}")
+        logger.error(f"Error writing to Neo4j for file {file_path}: {e}")
         raise e
+
+def create_ticket_node(tx, row):
+    """
+    Creates a Ticket node and relationships in Neo4j.
+    Creates relationships between Ticket, Product, Category, Store, and Basket.
+    """
+    query = """
+    MERGE (p:Product {name: $product})
+    MERGE (c:Category {name: $category})
+    MERGE (s:Store {name: $store})
+    MERGE (b:Basket {id: $basket_id})
+    CREATE (t:Ticket {
+        ticket_id: $ticket_id,
+        timestamp: $timestamp,
+        quantity: $quantity
+    })
+    CREATE (t)-[:CONTAINS]->(p)
+    CREATE (t)-[:IN_CATEGORY]->(c)
+    CREATE (t)-[:PURCHASED_AT]->(s)
+    CREATE (t)-[:PART_OF]->(b)
+    CREATE (p)-[:BELONGS_TO]->(c)
+    """
+    tx.run(query, 
+           ticket_id=row['ticket_id'],
+           product=row['product'],
+           basket_id=row['basket_id'],
+           timestamp=row['timestamp'],
+           category=row['category'],
+           quantity=int(row['quantity']),
+           store=row['store'])
