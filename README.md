@@ -23,13 +23,13 @@ El sistema implementa un patrón de arquitectura **event-driven** completamente 
 3. **AWS Lambda (Ingestion Function)**
    - Función serverless que procesa los eventos de SQS
    - Descarga y parsea los archivos CSV desde S3
-   - Transforma y carga los datos en DynamoDB
+   - Transforma y carga los datos en Neo4j
    - Escala automáticamente según el volumen de mensajes
 
-4. **Amazon DynamoDB (NoSQL Database)**
-   - Base de datos NoSQL que almacena los registros de tickets procesados
-   - Optimizada para consultas de alta velocidad
-   - Tabla: `Tickets` con estructura definida para análisis de patrones
+4. **EC2 con Neo4j (Graph Database)**
+   - Base de datos de grafos que almacena los registros de tickets procesados
+   - Optimizada para análisis de patrones y relaciones entre compras
+   - Permite consultas complejas sobre relaciones entre productos, categorías y comportamientos de compra
 
 ### Flujo de Datos
 
@@ -37,7 +37,7 @@ El sistema implementa un patrón de arquitectura **event-driven** completamente 
 2. **Event Notification**: S3 genera un evento y lo envía a la cola SQS
 3. **Trigger**: Lambda se activa automáticamente al recibir mensajes de SQS
 4. **Processing**: Lambda descarga el archivo, procesa los registros CSV
-5. **Storage**: Los datos transformados se insertan en la tabla DynamoDB
+5. **Storage**: Los datos transformados se insertan en Neo4j como nodos y relaciones
 
 ## Descripción de la Función
 
@@ -49,13 +49,15 @@ La función Lambda (`ingestion/lambda_function.py`) está diseñada específicam
 2.  **Parsing del Body**: Cada registro de SQS contiene un `body` que es una cadena JSON. Este `body` se parsea para extraer la estructura del evento de notificación de S3 (`S3Event`).
 3.  **Extracción de Metadatos**: Se obtienen el nombre del `bucket` y la `key` (nombre del archivo) desde el evento de S3.
 4.  **Descarga**: El archivo CSV se descarga desde S3 al almacenamiento temporal de la Lambda (`/tmp`).
-5.  **Ingestión**: Se lee el archivo CSV y se insertan los registros en la tabla de DynamoDB definida.
+5.  **Ingestión**: Se lee el archivo CSV y se insertan los registros en Neo4j como nodos y relaciones.
 
 ## Configuración
 
 ### Variables de Entorno
 
-*   `DYNAMODB_TABLE`: Nombre de la tabla de DynamoDB destino. Valor por defecto: `Tickets`.
+*   `NEO4J_URI`: URI de conexión a la instancia Neo4j en EC2 (ejemplo: `bolt://10.x.x.x:7687`)
+*   `NEO4J_USER`: Usuario de Neo4j. Valor por defecto: `neo4j`
+*   `NEO4J_PASSWORD`: Contraseña de Neo4j (debe configurarse como variable de entorno segura)
 
 ### Estructura de Datos (CSV)
 
@@ -69,5 +71,6 @@ El código fuente se encuentra en el directorio `ingestion/`.
 1.  Asegúrate de que la Lambda tenga permisos IAM para:
     *   `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes` (para leer de la cola).
     *   `s3:GetObject` (para descargar el archivo).
-    *   `dynamodb:BatchWriteItem` o `dynamodb:PutItem` (para escribir en la tabla).
+    *   Acceso de red a la instancia EC2 con Neo4j (configurar Security Groups apropiadamente).
 2.  Configura el **Trigger** de la Lambda para que sea la cola SQS correspondiente.
+3.  Asegúrate de que la instancia EC2 con Neo4j esté corriendo y accesible desde la Lambda (mismo VPC o configuración de red apropiada).
