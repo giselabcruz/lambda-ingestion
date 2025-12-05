@@ -6,12 +6,38 @@ Este proyecto implementa el componente de ingestión de datos dentro de la arqui
 
 ![Arquitectura del Sistema](diagram/architecture.png)
 
-Tal como se define en el diseño del sistema, el flujo de ingestión es totalmente asíncrono y dirigido por eventos:
+El sistema implementa un patrón de arquitectura **event-driven** completamente asíncrono para la ingestión de datos de compras. Los componentes principales son:
 
-1.  **S3 (Origen)**: El usuario sube un archivo de datos (ej. `tickets.csv`) a un bucket de Amazon S3.
-2.  **SQS (Desacoplamiento)**: S3 envía automáticamente una notificación de evento a una cola de Amazon SQS.
-3.  **Lambda (Procesamiento)**: Esta función Lambda está suscrita a la cola SQS y consume los eventos a medida que llegan.
-4.  **DynamoDB (Persistencia)**: La Lambda procesa el archivo referenciado y almacena los datos estructurados en una tabla de DynamoDB.
+### Componentes
+
+1. **Amazon S3 (Data Lake)**
+   - Almacena los archivos CSV con datos de tickets de compra
+   - Actúa como origen de datos y trigger del proceso de ingestión
+   - Configurado con notificaciones de eventos para nuevos archivos
+
+2. **Amazon SQS (Message Queue)**
+   - Cola de mensajes que desacopla la carga de archivos del procesamiento
+   - Recibe notificaciones automáticas cuando se suben archivos a S3
+   - Garantiza procesamiento confiable mediante reintentos automáticos
+
+3. **AWS Lambda (Ingestion Function)**
+   - Función serverless que procesa los eventos de SQS
+   - Descarga y parsea los archivos CSV desde S3
+   - Transforma y carga los datos en DynamoDB
+   - Escala automáticamente según el volumen de mensajes
+
+4. **Amazon DynamoDB (NoSQL Database)**
+   - Base de datos NoSQL que almacena los registros de tickets procesados
+   - Optimizada para consultas de alta velocidad
+   - Tabla: `Tickets` con estructura definida para análisis de patrones
+
+### Flujo de Datos
+
+1. **Upload**: El usuario sube un archivo `tickets.csv` al bucket de S3
+2. **Event Notification**: S3 genera un evento y lo envía a la cola SQS
+3. **Trigger**: Lambda se activa automáticamente al recibir mensajes de SQS
+4. **Processing**: Lambda descarga el archivo, procesa los registros CSV
+5. **Storage**: Los datos transformados se insertan en la tabla DynamoDB
 
 ## Descripción de la Función
 
